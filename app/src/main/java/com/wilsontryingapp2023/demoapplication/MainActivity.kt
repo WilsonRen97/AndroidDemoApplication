@@ -13,13 +13,16 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
 import androidx.appcompat.app.AppCompatActivity
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
 
-
-class MainActivity: AppCompatActivity() {
-    var currantImage : Int? = null
+class MainActivity : AppCompatActivity() {
+    var currantImage: Int? = null
     var currentText = ""
-    private var soundtrack : MediaPlayer? = null
-    lateinit var imageView : ImageView
+    private var soundtrack: MediaPlayer? = null
+    lateinit var imageView: ImageView
 
     override fun onStop() {
         super.onStop()
@@ -61,23 +64,25 @@ class MainActivity: AppCompatActivity() {
     public override fun onCreate(savedInstanceState: Bundle?) {
         soundtrack = MediaPlayer.create(this, R.raw.ice_fire);
         var counter = 0
-        var systemHandler : Handler = Handler(Looper.getMainLooper())
+        var systemHandler: Handler = Handler(Looper.getMainLooper())
         var supplier = Supplier()
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.thread_layout)
         var button: Button = findViewById(R.id.button3)
         imageView = findViewById(R.id.imageView2)
-        var editText : EditText = findViewById(R.id.editTextTextPersonName)
-        var preButton : Button = findViewById(R.id.button8)
+        var editText: EditText = findViewById(R.id.editTextTextPersonName)
+        var preButton: Button = findViewById(R.id.button8)
 
-        preButton.setOnClickListener() {_ ->
+        preButton.setOnClickListener() { _ ->
             var myIntent = Intent(this, SettingsActivity::class.java)
             startActivity(myIntent)
         }
 
         // saved state內部有內容
+        println(savedInstanceState)
         if (savedInstanceState != null) {
+            println("we are heree...")
             // 設定image view
             imageView.setImageResource(savedInstanceState.getInt("image"))
             // 設定current image
@@ -100,33 +105,60 @@ class MainActivity: AppCompatActivity() {
             currentText = "請輸入名稱"
         }
 
-        class MyHandler(looper : Looper) : Handler(looper) {
-            override fun handleMessage(msg: Message) {
+
+
+        class MyThread : Thread() {
+            val countDown = CountDownLatch(1)
+            inner class MyHandler(looper: Looper) : Handler(looper) {
+                override fun handleMessage(msg: Message) {
+                    println(Thread.currentThread().name)
+                    Thread.sleep(1500)
+                    systemHandler.post {
+                        // 改這邊
+                        counter += 1
+                        currantImage = supplier.rooms[(counter) % supplier.rooms.size]!!.picture
+                        imageView.setImageResource(currantImage!!)
+                    }
+                }
+            }
+
+            var myHandler: MyHandler? = null
+            override fun run() {
+                Looper.prepare()
+                myHandler = MyHandler(Looper.myLooper()!!)
+                countDown.countDown() // 通知main thread我們完成製作myHandler了
+                Looper.loop()
+            }
+        }
+        var myThread = MyThread()
+        myThread.start()
+
+
+        try {
+            // 在LooperThread完成myHandler製作之前，都需要等待
+            myThread.countDown.await()
+        } catch (e: InterruptedException) {
+            e.printStackTrace()
+        }
+
+        val executor: ExecutorService = Executors.newFixedThreadPool(10)
+
+
+//        button.setOnClickListener() { _ ->
+//            myThread.myHandler!!.sendMessage(Message.obtain())
+//        }
+
+        button.setOnClickListener {
+            executor.execute{
                 println(Thread.currentThread().name)
-                Thread.sleep(1500)
+                Thread.sleep(10000)
                 systemHandler.post {
-                    // 改這邊
+                    println(counter)
                     counter += 1
                     currantImage = supplier.rooms[(counter) % supplier.rooms.size]!!.picture
                     imageView.setImageResource(currantImage!!)
                 }
             }
-        }
-
-        var myHandler: MyHandler? = null
-        class MyThread() : Thread() {
-            override fun run() {
-                Looper.prepare()
-                myHandler = MyHandler(Looper.myLooper()!!)
-                Looper.loop()
-            }
-        }
-
-        var myThread = MyThread()
-        myThread.start()
-
-        button.setOnClickListener() {_ ->
-            myHandler?.sendMessage(Message.obtain())
         }
 
         editText.addTextChangedListener(object : TextWatcher {
